@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>삼각형 합동 시뮬레이터</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font-family:system-ui;background:#eef1ff;}
+header{background:#3249c2;color:white;padding:14px;}
+header h1{margin:0;font-size:20px;}
+header p{margin:4px 0 0;font-size:13px;}
+
+.layout{display:flex;gap:12px;padding:12px;}
+.controls{width:320px;display:flex;flex-direction:column;gap:10px;}
+.panel{background:white;border-radius:8px;padding:10px;box-shadow:0 1px 5px rgba(0,0,0,.15);}
+.panel h2{margin:0 0 6px;font-size:16px;}
+label{display:block;margin-top:5px;font-size:13px;}
+input,select{width:100%;padding:4px;margin-top:2px;}
+button{margin-top:6px;padding:5px;font-size:12px;cursor:pointer;}
+.primary{color:#3249c2;font-weight:bold;}
+
+.canvasBox{flex:1;background:white;padding:8px;border-radius:8px;box-shadow:0 1px 5px rgba(0,0,0,.15);}
+canvas{width:100%;height:480px;border:1px solid #ccc;border-radius:6px;background:#fafafa;}
+
+.hint{font-size:12px;color:#555;margin-top:4px;}
+</style>
+</head>
+<body>
+
+<header>
+<h1>삼각형 합동 시뮬레이터</h1>
+<p>조건으로 삼각형을 만들고 이동·회전·뒤집어서 합동 여부를 확인하세요.</p>
+</header>
+
+<div class="layout">
+
+<div class="controls">
+
+<div class="panel">
+<h2>삼각형 A (파랑)</h2>
+<label>만들기 방식</label>
+<select id="typeA">
+<option value="SSS">SSS</option>
+<option value="SAS">SAS</option>
+<option value="ASA">ASA</option>
+</select>
+
+<label id="la1">변1</label><input id="a1" type="number" value="3">
+<label id="la2">변2</label><input id="a2" type="number" value="4">
+<label id="la3">변3</label><input id="a3" type="number" value="5">
+
+<button class="primary" onclick="build('A')">삼각형 A 만들기</button><br>
+
+<button onclick="rot('A',-1)">↺ 45도</button>
+<button onclick="rot('A',1)">↻ 45도</button>
+<button onclick="flip('A','x')">좌우 뒤집기</button>
+<button onclick="flip('A','y')">상하 뒤집기</button>
+</div>
+
+<div class="panel">
+<h2>삼각형 B (주황)</h2>
+<label>만들기 방식</label>
+<select id="typeB">
+<option value="SSS">SSS</option>
+<option value="SAS">SAS</option>
+<option value="ASA">ASA</option>
+</select>
+
+<label id="lb1">변1</label><input id="b1" type="number" value="3">
+<label id="lb2">변2</label><input id="b2" type="number" value="4">
+<label id="lb3">변3</label><input id="b3" type="number" value="5">
+
+<button class="primary" onclick="build('B')">삼각형 B 만들기</button><br>
+
+<button onclick="rot('B',-1)">↺ 45도</button>
+<button onclick="rot('B',1)">↻ 45도</button>
+<button onclick="flip('B','x')">좌우 뒤집기</button>
+<button onclick="flip('B','y')">상하 뒤집기</button>
+</div>
+
+</div>
+
+<div class="canvasBox">
+<canvas id="canvas" width="900" height="480"></canvas>
+<div class="hint">
+● 삼각형을 드래그하여 이동<br>
+● *완벽히 일치하면 초록색 / 겹치지만 다르면 빨간색*
+</div>
+</div>
+
+</div>
+
+<script>
+// ======== 설정 ========
+const SCALE = 40;
+
+// ======== 삼각형 구조 ========
+const T={
+A:{v:null,x:230,y:250,r:0,fx:1,fy:1,col:"rgba(0,90,255,.4)",st:"blue",len:null},
+B:{v:null,x:650,y:250,r:0,fx:1,fy:1,col:"rgba(255,140,0,.4)",st:"orange",len:null}
+};
+
+const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d");
+
+// ======== 유틸 ========
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+// ======== 삼각형 생성 ========
+function SSS(a,b,c){
+if(a+b<=c||a+c<=b||b+c<=a)return null;
+const x=(b*b+a*a-c*c)/(2*a);
+const y=Math.sqrt(b*b-x*x);
+return[{x:0,y:0},{x:a,y:0},{x:x,y:y}];
+}
+
+function SAS(a,A,b){
+const r=A*Math.PI/180;
+const v=[{x:0,y:0},{x:a,y:0},{x:b*Math.cos(r),y:b*Math.sin(r)}];
+let s=[];
+for(let i=0;i<3;i++)s.push(dist(v[i],v[(i+1)%3]));
+return{v,s};
+}
+
+function ASA(A,c,B){
+const C=180-A-B;if(C<=0)return null;
+const k=c/Math.sin(C*Math.PI/180);
+return{v:SSS(c,k*Math.sin(B*Math.PI/180),k*Math.sin(A*Math.PI/180))};
+}
+
+// ======== 가장 긴 변 정렬 ========
+function align(v){
+let p=[[0,1],[1,2],[2,0]],m=0,s;
+for(let [i,j]of p){let d=dist(v[i],v[j]);if(d>m){m=d;s=[i,j];}}
+let a=Math.atan2(v[s[1]].y-v[s[0]].y,v[s[1]].x-v[s[0]].x);
+let c=Math.cos(-a),si=Math.sin(-a);
+return v.map(p=>({x:p.x*c-p.y*si,y:p.x*si+p.y*c}));
+}
+
+// ======== 빌드 ========
+function build(id){
+let t=T[id];
+let tp=document.getElementById("type"+id).value;
+let v1=+document.getElementById(id=="A"?"a1":"b1").value;
+let v2=+document.getElementById(id=="A"?"a2":"b2").value;
+let v3=+document.getElementById(id=="A"?"a3":"b3").value;
+let v=null,s=null;
+
+if(tp=="SSS"){v=SSS(v1,v2,v3);if(!v)return alert("SSS 불가");}
+if(tp=="SAS"){let r=SAS(v1,v2,v3);v=r.v;s=r.s;}
+if(tp=="ASA"){let r=ASA(v1,v2,v3);v=r.v;}
+if(!v)return;
+
+if(!s){
+s=[];
+for(let i=0;i<3;i++)s.push(dist(v[i],v[(i+1)%3]));
+}
+
+t.v=align(v);
+t.len=s;
+}
+
+// ======== 이동/변형 ========
+function rot(id,d){T[id].r+=Math.PI/4*d;}
+function flip(id,dir){if(dir=="x")T[id].fx*=-1; else T[id].fy*=-1;}
+
+function verts(t){
+if(!t.v)return null;
+const c=Math.cos(t.r),s=Math.sin(t.r);
+return t.v.map(p=>{
+let x=p.x*SCALE*t.fx,y=p.y*SCALE*t.fy;
+return{x:x*c-y*s+t.x,y:x*s+y*c+t.y};
+});
+}
+
+// ======== 합동 검사 ========
+function same(a,b){
+if(!a.len||!b.len)return false;
+let x=[...a.len].sort(),y=[...b.len].sort();
+return x.every((v,i)=>Math.abs(v-y[i])<1e-2);
+}
+
+function overlap(a,b){
+function box(v){let x=v.map(p=>p.x),y=v.map(p=>p.y);
+return{minX:Math.min(...x),maxX:Math.max(...x),minY:Math.min(...y),maxY:Math.max(...y)}}
+let A=box(a),B=box(b);
+return !(A.maxX<B.minX||B.maxX<A.minX||A.maxY<B.minY||B.maxY<A.minY);
+}
+
+function coincide(a,b){
+if(!a||!b)return false;
+let e=6;
+for(let p of a){
+let ok=false;
+for(let q of b)if(dist(p,q)<e)ok=true;
+if(!ok)return false;
+}
+return true;
+}
+
+// ======== 그리기 ========
+function draw(t,color){
+let v=verts(t);if(!v)return;
+ctx.beginPath();
+ctx.moveTo(v[0].x,v[0].y);
+v.forEach(p=>ctx.lineTo(p.x,p.y));
+ctx.closePath();
+ctx.fillStyle=t.col;ctx.fill();
+ctx.lineWidth=3;
+ctx.strokeStyle=color||t.st;ctx.stroke();
+}
+
+// ======== 드래그 ========
+let drag=null,dx,dy;
+function inside(p,v){
+let a=(p1,p2,p3)=>(p1.x-p3.x)*(p2.y-p3.y)-(p2.x-p3.x)*(p1.y-p3.y);
+let d1=a(p,v[0],v[1]),d2=a(p,v[1],v[2]),d3=a(p,v[2],v[0]);
+return !((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0));
+}
+
+// 마우스
+canvas.onmousedown=e=>{
+let r=canvas.getBoundingClientRect();
+let x=(e.clientX-r.left)*(canvas.width/r.width);
+let y=(e.clientY-r.top)*(canvas.height/r.height);
+for(let k of ["B","A"]){
+let v=verts(T[k]);
+if(v&&inside({x,y},v)){drag=T[k];dx=x-drag.x;dy=y-drag.y;}
+}
+}
+canvas.onmousemove=e=>{
+if(!drag)return;
+let r=canvas.getBoundingClientRect();
+drag.x=(e.clientX-r.left)*(canvas.width/r.width)-dx;
+drag.y=(e.clientY-r.top)*(canvas.height/r.height)-dy;
+}
+canvas.onmouseup=_=>drag=null;
+canvas.onmouseleave=_=>drag=null;
+
+// 터치
+canvas.ontouchstart=e=>{
+let t=e.touches[0],r=canvas.getBoundingClientRect();
+let x=(t.clientX-r.left)*(canvas.width/r.width);
+let y=(t.clientY-r.top)*(canvas.height/r.height);
+for(let k of ["B","A"]){
+let v=verts(T[k]);
+if(v&&inside({x,y},v)){drag=T[k];dx=x-drag.x;dy=y-drag.y;}
+}
+e.preventDefault();
+};
+canvas.ontouchmove=e=>{
+if(!drag)return;
+let t=e.touches[0],r=canvas.getBoundingClientRect();
+drag.x=(t.clientX-r.left)*(canvas.width/r.width)-dx;
+drag.y=(t.clientY-r.top)*(canvas.height/r.height)-dy;
+e.preventDefault();
+};
+canvas.ontouchend=_=>drag=null;
+
+// ======== 루프 ========
+function loop(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+let A=verts(T.A),B=verts(T.B);
+let c=null;
+if(A&&B&&overlap(A,B)){
+if(same(T.A,T.B)&&coincide(A,B))c="green";
+else c="red";
+}
+draw(T.A,c);draw(T.B,c);
+requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
